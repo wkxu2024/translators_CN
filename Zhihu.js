@@ -16,7 +16,7 @@
 	***** BEGIN LICENSE BLOCK *****
 
 	Copyright © 2020 Lin Xingzhong, 2024 jiaojiaodubai
-	
+
 	This file is part of Zotero.
 
 	Zotero is free software: you can redistribute it and/or modify
@@ -236,12 +236,12 @@ function beautifyHtml(doc) {
 			width: 690px !important;
 			margin: 0 auto !important;
 		}
-		
+
 		.ContentItem-time {
 			width: 690px !important;
 			margin: 0 auto !important;
 		}
-		
+
 		.Post-Main, .Post-Sub {
 			width: 690px !important;
 			margin: 0 auto !important;
