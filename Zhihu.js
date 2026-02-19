@@ -132,6 +132,15 @@ async function scrape(doc, url = doc.location.href) {
 					return match;
 				}
 			});
+			// 清理CSS类名和样式
+			// 移除class属性
+			noteContent = noteContent.replace(/class="[^"]*"/g, '');
+			// 移除style属性
+			noteContent = noteContent.replace(/style="[^"]*"/g, '');
+			// 移除<style>标签块
+			noteContent = noteContent.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+			// 移除CSS选择器和规则
+			noteContent = noteContent.replace(/\.[a-zA-Z0-9_-]+{[^}]*}/g, '');
 			newItem.abstractNote = ZU.cleanTags(noteContent).slice(0, 150) + '...';
 			newItem.forumTitle = '知乎';
 			newItem.postType = '知乎回答';
