@@ -146,8 +146,8 @@ async function scrape(doc, url = doc.location.href) {
 				newItem.notes.push(`<h1>《${newItem.title}》 - 目录</h1>` + contents.innerHTML.replace(/ · · · [\s\S]*$/, '').replace(/展开全部$/, ''));
 			}
 			// https://book.douban.com/subject/26604008/
-			extra.set('original-title', labels.get('原作名'), true);
-			extra.set('price', labels.get('定价'));
+			// extra.set('original-title', labels.get('原作名'), true);
+			// extra.set('price', labels.get('定价'));
 			break;
 		}
 		case 'film': {
@@ -159,9 +159,9 @@ async function scrape(doc, url = doc.location.href) {
 			// https://movie.douban.com/subject/3183628/
 			const zhTitle = doc.title.replace(/ \(豆瓣\)$/, '');
 			newItem.title = zhTitle;
-			if (new RegExp(`${zhTitle}.+`).test(title)) {
-				extra.set('original-title', title.replace(`${zhTitle} `, ''), true);
-			}
+			// if (new RegExp(`${zhTitle}.+`).test(title)) {
+			// 	extra.set('original-title', title.replace(`${zhTitle} `, ''), true);
+			// }
 			if (/tv/i.test(json['@type'])) {
 				newItem.itemType = 'tvBroadcast';
 				newItem.date = ZU.strToISO(labels.get('首播'));
@@ -173,10 +173,10 @@ async function scrape(doc, url = doc.location.href) {
 			// https://movie.douban.com/subject/35725869/
 			newItem.abstractNote = text('.related-info .all') || text(doc, '.related-info [property*="summary"]');
 			newItem.runningTime = labels.get('片长').replace('分钟', ' min');
-			extra.set('place', labels.get('制片国家'));
-			extra.set('alias', labels.get('又名'));
-			extra.set('IMDb', labels.get('IMDb'));
-			extra.set('style', labels.get('类型'));
+			// extra.set('place', labels.get('制片国家'));
+			// extra.set('alias', labels.get('又名'));
+			// extra.set('IMDb', labels.get('IMDb'));
+			// extra.set('style', labels.get('类型'));
 			const creatorsMap = {
 				director: json.director,
 				scriptwriter: json.author,
@@ -195,14 +195,14 @@ async function scrape(doc, url = doc.location.href) {
 					creators.push(processName(creator, creatorType));
 				}
 			}
-			const image = json.image;
-			if (image) {
-				newItem.attachments.push({
-					title: newItem.title,
-					url: image,
-					mimeType: 'image/' + tryMatch(image, /\.([a-z]+?)$/, 1)
-				});
-			}
+			// const image = json.image;
+			// if (image) {
+			// 	newItem.attachments.push({
+			// 		title: newItem.title,
+			// 		url: image,
+			// 		mimeType: 'image/' + tryMatch(image, /\.([a-z]+?)$/, 1)
+			// 	});
+			// }
 			break;
 		}
 		case 'audioRecording': {
@@ -212,11 +212,11 @@ async function scrape(doc, url = doc.location.href) {
 			newItem.label = labels.get('出版者');
 			newItem.date = labels.get('发行时间').replace(/\./, '-');
 			// runningTime: 时长,
-			extra.set('genre', 'Album', true);
-			extra.set('style', labels.get('流派'));
-			extra.set('alias', labels.get('又名'));
-			extra.set('ISRC', labels.get('ISRC'));
-			extra.set('barcode', labels.get('条形码'));
+			// extra.set('genre', 'Album', true);
+			// extra.set('style', labels.get('流派'));
+			// extra.set('alias', labels.get('又名'));
+			// extra.set('ISRC', labels.get('ISRC'));
+			// extra.set('barcode', labels.get('条形码'));
 			labels.get('表演者').split(' / ').forEach(performer => creators.push(processName(performer, 'performer')));
 			const contents = doc.querySelector('.track-list');
 			if (contents) {
@@ -233,14 +233,14 @@ async function scrape(doc, url = doc.location.href) {
 		: 'en-US';
 	newItem.url = url;
 	extra.set('rating', text(doc, '.rating_num'));
-	extra.set('ratingPeople', text(doc, '.rating_people'));
-	extra.set('comments', tryMatch(text(doc, '#comments-section h2'), /\d+/));
+	// extra.set('ratingPeople', text(doc, '.rating_people'));
+	// extra.set('comments', tryMatch(text(doc, '#comments-section h2'), /\d+/));
 	Z.debug(creators);
-	if (creators.some(creator => creator.country || creator.original)) {
-		extra.push('creatorsExt', JSON.stringify(creators));
-	}
+	// if (creators.some(creator => creator.country || creator.original)) {
+	// 	extra.push('creatorsExt', JSON.stringify(creators));
+	// }
 	creators.forEach((creator) => {
-		extra.push('original-author', creator.original, true);
+		// extra.push('original-author', creator.original, true);
 		delete creator.country;
 		delete creator.original;
 		newItem.creators.push(creator);
