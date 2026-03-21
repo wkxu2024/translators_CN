@@ -9,7 +9,7 @@
 	"inRepository": true,
 	"translatorType": 4,
 	"browserSupport": "gcsibv",
-	"lastUpdated": "2025-06-25 06:21:19"
+	"lastUpdated": "2026-03-21 13:08:02"
 }
 
 /*
@@ -190,8 +190,8 @@ async function scrape(doc, url = doc.location.href) {
 	}
 	newItem.url = url;
 	newItem.language = 'zh-CN';
-	const vote = innerText(doc, '.VoteButton--up').match('[0-9]+$');
-	if (vote) newItem.extra = `vote: ${vote[0]}`;
+	const vote = attr(doc, 'meta[itemprop="upvoteCount"]', 'content');
+	if (vote) newItem.extra = `vote: ${vote}`;
 	newItem.creators.push({
 		lastName: attr(doc, '.AuthorInfo > meta[itemprop="name"]', 'content'),
 		creatorType: 'author',
