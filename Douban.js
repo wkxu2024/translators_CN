@@ -9,7 +9,7 @@
 	"inRepository": true,
 	"translatorType": 4,
 	"browserSupport": "gcsibv",
-	"lastUpdated": "2024-11-15 03:16:28"
+	"lastUpdated": "2026-03-21 13:16:54"
 }
 
 /*
@@ -96,11 +96,11 @@ async function scrape(doc, url = doc.location.href) {
 	const labels = isRead
 		? new Labels(doc, '.article-meta > p')
 		: new TextLabels(doc, '#info', /.+?:/);
-	Z.debug(isRead ? labels.data.map(arr => [arr[0], arr[1].innerText]) : labels.data);
+	// Z.debug(isRead ? labels.data.map(arr => [arr[0], arr[1].innerText]) : labels.data);
 	let title = ZU.trimInternal(text(doc, 'h1'));
 	switch (newItem.itemType) {
 		case 'book': {
-			Z.debug('this is a book');
+			// Z.debug('this is a book');
 			if (title.match(/[(（].*第.*?(?:版|卷)[)）]$/)) {
 				newItem.title = tryMatch(title, /(.+)\s*[(（].*第.*?(?:版|卷)[)）]/, 1);
 				newItem.edition = toArabicNum(tryMatch(title, /[(（].*第(.*?)版[)）]/, 1));
@@ -151,9 +151,9 @@ async function scrape(doc, url = doc.location.href) {
 			break;
 		}
 		case 'film': {
-			Z.debug('this is a film');
+			// Z.debug('this is a film');
 			let json = JSON.parse(ZU.trimInternal(text(doc, 'script[type="application/ld+json"]')));
-			Z.debug(json);
+			// Z.debug(json);
 			title = title.replace(/ \(\d{4}\)$/, '');
 			// 很难用正则从title中匹配出中文标题
 			// https://movie.douban.com/subject/3183628/
@@ -235,7 +235,7 @@ async function scrape(doc, url = doc.location.href) {
 	extra.set('rating', text(doc, '.rating_num'));
 	// extra.set('ratingPeople', text(doc, '.rating_people'));
 	// extra.set('comments', tryMatch(text(doc, '#comments-section h2'), /\d+/));
-	Z.debug(creators);
+	// Z.debug(creators);
 	// if (creators.some(creator => creator.country || creator.original)) {
 	// 	extra.push('creatorsExt', JSON.stringify(creators));
 	// }
@@ -264,7 +264,7 @@ class TextLabels {
 				this.data.push(arr[i]);
 			}
 		}
-		Z.debug(this.data);
+		// Z.debug(this.data);
 		// innerText在详情页表现良好，但在多条目表现欠佳，故统一使用经过处理的text
 		this.data = this.data
 			.map(keyVal => [
@@ -391,11 +391,11 @@ function processName(fullName, defaultType) {
 	let creatorType, country, original;
 	// 当多个人名折叠时，最后一个人名可能带有“更多”。
 	fullName = fullName.replace(/更多\.\.\.$/, '');
-	Z.debug(fullName);
+	// Z.debug(fullName);
 	// https://book.douban.com/subject/35152294/
 	country = tryMatch(fullName, /^[[(（【［](.+?)国?[］】）)\]]/, 1);
 	fullName = fullName.replace(/^[[(（【［](.+?)国?[］】）)\]]/, '');
-	Z.debug(fullName);
+	// Z.debug(fullName);
 	const creatorTypMap = {
 		// https://book.douban.com/subject/34659228/
 		author: /[著绘]+$/,
@@ -405,7 +405,7 @@ function processName(fullName, defaultType) {
 	};
 	const remark = tryMatch(fullName, /[[(（【［](.+)[］】）)\]]$/, 1);
 	fullName = fullName.replace(/[[(（【［](.+)[］】）)\]]$/, '');
-	Z.debug(fullName);
+	// Z.debug(fullName);
 	for (const key in creatorTypMap) {
 		let pattern = creatorTypMap[key];
 		if (pattern.test(remark)) {
