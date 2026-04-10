@@ -1,6 +1,7 @@
 {
     // "javascript.format.enable": false,
-    "javascript.validate.enable": false,
+    // "javascript.validate.enable": false,
+    "js/ts.validate.enabled": false,
     "eslint.enable": true,
     "files.eol": "\n"
 }
