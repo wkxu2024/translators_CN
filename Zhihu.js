@@ -9,7 +9,7 @@
 	"inRepository": true,
 	"translatorType": 4,
 	"browserSupport": "gcsibv",
-	"lastUpdated": "2026-04-02 09:36:34"
+	"lastUpdated": "2026-04-10 09:35:02"
 }
 
 /*
@@ -190,7 +190,7 @@ async function scrape(doc, url = doc.location.href) {
 			const vote = parseVoteCount(voteUpText);
 			if (vote) newItem.extra = `vote: ${vote}`;
 			// optimal DOM for zhuanlan post
-			optimalDOM(doc);
+			// optimalDOM(doc);
 			break;
 		}
 	}
