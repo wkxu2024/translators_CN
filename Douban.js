@@ -9,7 +9,7 @@
 	"inRepository": true,
 	"translatorType": 4,
 	"browserSupport": "gcsibv",
-	"lastUpdated": "2026-06-09 05:39:45"
+	"lastUpdated": "2026-06-15 03:37:45"
 }
 
 /*
@@ -109,7 +109,7 @@ async function scrape(doc, url = doc.location.href) {
 			else {
 				newItem.title = title;
 			}
-			let subtitle = ZU.trimInternal(text(doc, 'h2'));
+			let subtitle = ZU.trimInternal(text(doc, 'h2.subtitle'));
 			if (subtitle) {
 				newItem.shortTitle = newItem.title;
 				newItem.title = `${newItem.title}${/[\u4e00-\u9fff]/.test(newItem.title) ? '：' : ': '}${subtitle}`;
