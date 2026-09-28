@@ -9,7 +9,7 @@
 	"inRepository": true,
 	"translatorType": 4,
 	"browserSupport": "gcsibv",
-	"lastUpdated": "2026-05-06 05:49:57"
+	"lastUpdated": "2026-09-26 18:28:59"
 }
 
 /*
@@ -228,7 +228,8 @@ async function scrapeMain(doc, url) {
 	let rows = [];
 	try {
 		rows = doc.querySelectorAll('.main .container :has(>[class^="rowtit"])');
-	} catch (e) {
+	}
+	catch (e) {
 		// Compatibility with old browser that doesn't support `:has()` selector
 		const titles = doc.querySelectorAll('.main .container [class^="rowtit"]');
 		const uniqueRows = new Set();
@@ -452,7 +453,7 @@ async function scrapeMain(doc, url) {
 			newItem.filingDate = data('申请日');
 			newItem.issueDate = data('授权公告日');
 			newItem.rights = ZU.trimInternal(innerText(doc, '.claim > h5 + div'));
-			setExtra('Genre', data('专利类型'));
+			setExtra(newItem, 'Genre', data('专利类型'));
 			data('发明人', true)
 				.querySelectorAll('a')
 				.forEach((elm) => {
@@ -593,6 +594,8 @@ const zhTypeMap = {
 	CJFN: 'journalArticle',
 	// 中国学术辑刊全文数据库（China Collected Journal Database）
 	CCJD: 'journalArticle',
+	ZHYX: 'journalArticle',
+	CJTL: 'journalArticle',
 
 	/* thesis */
 	// 中国博硕士学位论文全文数据库（China Doctoral Dissertations and Master’s Theses Full-text Database）

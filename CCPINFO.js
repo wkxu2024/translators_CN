@@ -9,7 +9,7 @@
 	"inRepository": true,
 	"translatorType": 12,
 	"browserSupport": "gcsibv",
-	"lastUpdated": "2025-05-27 07:40:48"
+	"lastUpdated": "2026-08-17 02:53:21"
 }
 
 /*
@@ -129,8 +129,8 @@ async function scrape(doc, url = doc.location.href) {
 	const newItem = new Zotero.Item('book');
 	const data = getLabeledData(
 		doc.querySelectorAll('.book_intro .book_con > :where(.fr, .fl)'),
-		(row) => text(row, '.fl:first-child').replace(/：$/, ''),
-		(row) => row.querySelector('.val_txt'),
+		row => text(row, '.fl:first-child').replace(/：$/, ''),
+		row => row.querySelector('.val_txt'),
 		doc.createElement('div')
 	);
 	newItem.title = text(doc, '.book_intro > h2 > span');
@@ -175,6 +175,8 @@ async function scrape(doc, url = doc.location.href) {
 				const country = tryMatch(name, /^[[(（](.+?)[\])）]/, 1);
 				const creator = ZU.cleanAuthor(name.replace(/^[[(（].+?[\])）]/, ''), creatorType);
 				if (/\p{Unified_Ideograph}/u.test(creator.lastName)) {
+					creator.lastName = `${creator.lastName}${creator.firstName}`;
+					creator.firstName = '';
 					creator.fieldMode = 1;
 				}
 				newItem.creators.push(JSON.parse(JSON.stringify(creator)));
@@ -205,8 +207,8 @@ function getLabeledData(rows, labelGetter, dataGetter, defaultElm) {
 			for (const label of labels) {
 				const result = data(label, element);
 				if (
-					(element && /\S/.test(result.textContent)) ||
-					(!element && /\S/.test(result))) {
+					(element && /\S/.test(result.textContent))
+					|| (!element && /\S/.test(result))) {
 					return result;
 				}
 			}
