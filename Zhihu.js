@@ -9,7 +9,7 @@
 	"inRepository": true,
 	"translatorType": 4,
 	"browserSupport": "gcsibv",
-	"lastUpdated": "2026-04-10 09:35:02"
+	"lastUpdated": "2026-10-12 12:16:05"
 }
 
 /*
@@ -35,8 +35,360 @@
 	***** END LICENSE BLOCK *****
 */
 
+// ============================================================
+// 工具函数：知乎图片懒加载回填
+// ============================================================
+/**
+ * 知乎使用懒加载，img 的 src 是占位符，真实地址在若干 data-* 属性中。
+ * 本函数遍历容器内所有 img，将真实地址回填到 src，避免依赖滚动页面触发懒加载。
+ * @param {Element} container - 正文容器元素（可以是克隆体）
+ */
+function fixLazyImages(container) {
+	const imgs = container.querySelectorAll('img');
+	for (const img of imgs) {
+		// 按优先级尝试获取真实图片地址，涵盖知乎不同版本的懒加载属性
+		const realSrc = img.getAttribute('data-original')
+			|| img.getAttribute('data-actualsrc')
+			|| img.getAttribute('data-original-token')
+			|| img.getAttribute('data-src')
+			|| img.getAttribute('data-lazy-src');
+		if (realSrc) {
+			img.setAttribute('src', realSrc);
+		}
+		// 移除懒加载相关的 data 属性，减小快照体积
+		img.removeAttribute('data-original');
+		img.removeAttribute('data-actualsrc');
+		img.removeAttribute('data-original-token');
+		img.removeAttribute('data-src');
+		img.removeAttribute('data-lazy-src');
+	}
+}
+
+// ============================================================
+// 工具函数：安全获取元素文本（带多重选择器回退）
+// ============================================================
+/**
+ * 尝试多个选择器，返回第一个匹配元素的文本内容。
+ * @param {Document} doc - 文档对象
+ * @param {string[]} selectors - 选择器数组（按优先级排列）
+ * @returns {string} 匹配到的文本，未匹配则返回空字符串
+ */
+function getTextBySelectors(doc, selectors) {
+	for (const sel of selectors) {
+		try {
+			const el = doc.querySelector(sel);
+			if (el) {
+				return ZU.trimInternal(el.textContent);
+			}
+		} catch (e) {
+			// 忽略无效选择器
+		}
+	}
+	return '';
+}
+
+/**
+ * 尝试多个选择器，返回第一个匹配元素的属性值。
+ * @param {Document} doc - 文档对象
+ * @param {string[]} selectors - 选择器数组
+ * @param {string} attrName - 属性名
+ * @returns {string} 属性值，未匹配则返回空字符串
+ */
+function getAttrBySelectors(doc, selectors, attrName) {
+	for (const sel of selectors) {
+		try {
+			const el = doc.querySelector(sel);
+			if (el && el.getAttribute(attrName)) {
+				return el.getAttribute(attrName);
+			}
+		} catch (e) {
+			// 忽略无效选择器
+		}
+	}
+	return '';
+}
+
+// ============================================================
+// 工具函数：按优先级查找正文容器
+// ============================================================
+/**
+ * 按选择器数组优先级依次尝试，返回第一个匹配到的元素。
+ * 用于避免在知乎回答页误抓问题描述（问题描述与回答正文共用 .RichContent-inner 类名）。
+ * @param {Document} doc
+ * @param {string[]} selectors - 选择器数组（按优先级从高到低）
+ * @returns {Element|null}
+ */
+function getContentElement(doc, selectors) {
+	for (const sel of selectors) {
+		try {
+			const el = doc.querySelector(sel);
+			if (el) return el;
+		} catch (e) {
+			// 忽略无效选择器
+		}
+	}
+	return null;
+}
+
+// ============================================================
+// 工具函数：判断公式容器是行内还是块级
+// ============================================================
+/**
+ * 根据 data-eeimg 属性或标签类型判断公式应作为行内还是块级渲染。
+ *   知乎约定：data-eeimg="1" 为行内，data-eeimg="2" 为块级。
+ *   没有该属性时：<span> 视为行内，<div> 等块级元素视为块级。
+ * @param {Element} el - 公式容器元素
+ * @returns {boolean} true 表示行内公式
+ */
+function isInlineFormula(el) {
+	const eeimg = el.getAttribute('data-eeimg');
+	if (eeimg === '1') return true;
+	if (eeimg === '2') return false;
+	// 兜底：按标签名判断
+	return el.tagName.toLowerCase() === 'span';
+}
+
+// ============================================================
+// 工具函数：正文内容提取（DOM 操作，替代正则链）
+// ============================================================
+/**
+ * 从正文容器中克隆出一份干净的内容子树。
+ * 返回的是 Element（克隆体），可同时用于生成笔记 HTML 和快照文档。
+ * 使用原生 DOM 操作替代正则替换，避免回溯导致的性能问题。
+ * @param {Element} container - 正文容器元素
+ * @returns {Element} 清理后的克隆元素
+ */
+function extractContentElement(container) {
+	// 只克隆正文这一小块子树，不碰整页
+	const root = container.cloneNode(true);
+
+	// 1. 回填懒加载图片
+	fixLazyImages(root);
+
+	// 2. 移除所有 class 和 style 属性（减小体积，消除样式干扰）
+	root.querySelectorAll('[class]').forEach(el => el.removeAttribute('class'));
+	root.querySelectorAll('[style]').forEach(el => el.removeAttribute('style'));
+
+	// 3. 清除所有 on* 内联事件属性（安全加固）
+	root.querySelectorAll('*').forEach(el => {
+		for (const attr of Array.from(el.attributes)) {
+			if (attr.name.startsWith('on')) {
+				el.removeAttribute(attr.name);
+			}
+		}
+	});
+
+	// 4. 处理 <figure> 中的图片：只保留 <img> 本身
+	root.querySelectorAll('figure').forEach(fig => {
+		const img = fig.querySelector('img');
+		if (img) {
+			fig.replaceWith(img);
+		} else {
+			fig.remove();
+		}
+	});
+
+	// 5. 处理公式
+	// 5.1 处理带 data-tex 的公式容器（.ztext-math 或任何 [data-tex]）
+	//     用 data-tex 里的 LaTeX 源码替换整个元素，同时带走内部的渲染结果。
+	//     同时在父元素打标记，供 5.3 清理邻近残留。
+	const mathContainers = root.querySelectorAll('.ztext-math, [data-tex]');
+	mathContainers.forEach(el => {
+		const tex = el.getAttribute('data-tex');
+		if (!tex) return;
+		const parent = el.parentNode;
+		// 关键：根据 data-eeimg 决定行内还是块级
+		const wrap = isInlineFormula(el) ? '$' : '$$';
+		const textNode = root.ownerDocument.createTextNode(wrap + tex + wrap);
+		el.replaceWith(textNode);
+		if (parent && parent.nodeType === 1) {
+			parent.setAttribute('data-has-formula', '1');
+		}
+	});
+
+	// 5.2 处理 .math-inline / .math-block —— 没有 data-tex 的行内公式容器。
+	//     这些容器的文本子节点本身就是 LaTeX 源码（如 \varepsilon），
+	//     直接用 $$...$$ 包裹。仅在文本里确实含反斜杠命令时才处理，避免误伤普通 span。
+	root.querySelectorAll('.math-inline, .math-block').forEach(el => {
+		const tex = el.textContent.trim();
+		if (tex && /\\[a-zA-Z]+/.test(tex)) {
+			// .math-inline 用 $...$；.math-block 用 $$...$$
+			const isInline = el.classList.contains('math-inline') || isInlineFormula(el);
+			const wrap = isInline ? '$' : '$$';
+			const textNode = root.ownerDocument.createTextNode(wrap + tex + wrap);
+			el.replaceWith(textNode);
+		}
+	});
+
+	// 5.3 移除知乎渲染公式后的残留容器。
+	//     KaTeX / MathJax / MathML / 知乎自己的 fallback 渲染产物，
+	//     内容已被 data-tex 里的 LaTeX 源码取代，留着就会造成“重复”。
+	root.querySelectorAll([
+		'.katex', '.katex-display', '.katex-mathml', '.katex-html',
+		'.MathJax', '.MathJax_Preview', '.MathJax_Display', '.MathJax_SVG',
+		'mjx-container', 'math',
+		'.tex2jax_ignore', '.math-holder',
+	].join(',')).forEach(el => {
+		el.remove();
+	});
+
+	// 5.4 清理公式容器“附近”的孤立渲染残留文本。
+	//     某些知乎页面把渲染后的可见文本放在 .ztext-math 之外（兄弟节点），
+	//     特征是含 Unicode 数学符号（− ¯ ⋯ ≠ ≤ ≥ ∑ ∏ ∫ √ ∞ 等）且不含反斜杠命令。
+	//     只在 5.1 标记过的父元素里清理，避免误伤正文。
+	root.querySelectorAll('[data-has-formula]').forEach(parent => {
+		parent.removeAttribute('data-has-formula');
+		for (const child of Array.from(parent.childNodes)) {
+			if (child.nodeType !== 3) continue; // 只处理文本节点
+			const trimmed = (child.nodeValue || '').trim();
+			if (!trimmed) continue;
+			const hasUnicodeMath = /[−¯⋯≠≤≥∑∏∫√∞←→↔×÷±∂²³¹⁰ⁿ]/.test(trimmed);
+			const hasLatexCmd = /\\[a-zA-Z]+/.test(trimmed);
+			if (hasUnicodeMath && !hasLatexCmd) {
+				parent.removeChild(child);
+			}
+		}
+	});
+
+	// 6. 处理小卡片链接：只保留 data-text 中的文本
+	root.querySelectorAll('a[data-text]').forEach(a => {
+		const text = a.getAttribute('data-text');
+		if (text) {
+			a.textContent = text;
+		}
+		// 移除多余的 data-* 属性
+		for (const attr of Array.from(a.attributes)) {
+			if (attr.name.startsWith('data-') && attr.name !== 'href') {
+				a.removeAttribute(attr.name);
+			}
+		}
+	});
+
+	// 7. 处理知乎直达链接：将 <a class="RichContent-EntityWord"> 替换为纯文本
+	root.querySelectorAll('a.RichContent-EntityWord').forEach(a => {
+		const textNode = root.ownerDocument.createTextNode(a.textContent);
+		a.replaceWith(textNode);
+	});
+
+	// 8. 还原 link.zhihu.com 跳转链接
+	root.querySelectorAll('a[href*="link.zhihu.com"]').forEach(a => {
+		try {
+			const target = new URL(a.href).searchParams.get('target');
+			if (target) {
+				a.href = decodeURIComponent(target);
+			}
+		} catch (e) {
+			// 忽略无效 URL
+		}
+	});
+
+	// 9. 移除内联的 <style> 标签块（如果还有）
+	root.querySelectorAll('style').forEach(el => el.remove());
+
+	return root;
+}
+
+// ============================================================
+// 工具函数：构建最小化快照文档
+// ============================================================
+/**
+ * 构建一个干净、小巧的 HTML 文档作为 Snapshot。
+ * 不克隆整页，而是用空白文档 + 正文子树 + 最小样式拼装而成。
+ * 这一步是本次性能优化的关键：把「整页克隆 + 裁剪」换成「拼装」。
+ *
+ * @param {Document} originalDoc - 原始文档（仅用于取 implementation / title）
+ * @param {Element} contentElement - 已清理过的正文克隆元素
+ * @param {Object} meta - 元信息 { title, author, date, url, siteName }
+ * @returns {Document} 最小化快照文档
+ */
+function buildSnapshotDocument(originalDoc, contentElement, meta) {
+	// 用原文档的 implementation 创建一个空白 HTML 文档
+	const snapshot = originalDoc.implementation.createHTMLDocument(meta.title || 'Zhihu Snapshot');
+
+	// ---- 1. 基础 head ----
+	const charset = snapshot.createElement('meta');
+	charset.setAttribute('charset', 'utf-8');
+	snapshot.head.appendChild(charset);
+
+	const viewport = snapshot.createElement('meta');
+	viewport.setAttribute('name', 'viewport');
+	viewport.setAttribute('content', 'width=device-width, initial-scale=1');
+	snapshot.head.appendChild(viewport);
+
+	const titleEl = snapshot.createElement('title');
+	titleEl.textContent = meta.title || '';
+	snapshot.head.appendChild(titleEl);
+
+	// ---- 2. 最小样式 ----
+	const style = snapshot.createElement('style');
+	style.textContent = `
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+			max-width: 800px;
+			margin: 0 auto;
+			padding: 24px;
+			line-height: 1.75;
+			color: #1a1a1a;
+			background: #fff;
+			word-wrap: break-word;
+		}
+		h1.snapshot-title { font-size: 26px; line-height: 1.4; margin: 0 0 12px 0; }
+		.snapshot-meta { color: #888; font-size: 14px; margin-bottom: 32px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
+		.snapshot-meta a { color: #056de8; text-decoration: none; }
+		img { max-width: 100%; height: auto; display: block; margin: 12px 0; }
+		a { color: #056de8; text-decoration: none; }
+		a:hover { text-decoration: underline; }
+		blockquote { border-left: 3px solid #ddd; padding: 4px 16px; color: #555; margin: 16px 0; }
+		pre { background: #f6f8fa; padding: 12px; border-radius: 6px; overflow-x: auto; }
+		code { background: #f6f8fa; padding: 2px 6px; border-radius: 3px; font-family: Consolas, Monaco, monospace; }
+		table { border-collapse: collapse; max-width: 100%; }
+		th, td { border: 1px solid #ddd; padding: 6px 10px; }
+		hr { border: none; border-top: 1px solid #eee; margin: 24px 0; }
+	`;
+	snapshot.head.appendChild(style);
+
+	// ---- 3. 正文前置信息 ----
+	const h1 = snapshot.createElement('h1');
+	h1.className = 'snapshot-title';
+	h1.textContent = meta.title || '';
+	snapshot.body.appendChild(h1);
+
+	const metaDiv = snapshot.createElement('div');
+	metaDiv.className = 'snapshot-meta';
+
+	if (meta.author) {
+		const authorSpan = snapshot.createElement('span');
+		authorSpan.textContent = meta.author;
+		metaDiv.appendChild(authorSpan);
+	}
+	if (meta.date) {
+		if (meta.author) metaDiv.appendChild(snapshot.createTextNode(' · '));
+		const dateSpan = snapshot.createElement('span');
+		dateSpan.textContent = meta.date;
+		metaDiv.appendChild(dateSpan);
+	}
+	if (meta.url) {
+		metaDiv.appendChild(snapshot.createTextNode(' · '));
+		const link = snapshot.createElement('a');
+		link.href = meta.url;
+		link.textContent = '原文链接';
+		metaDiv.appendChild(link);
+	}
+	snapshot.body.appendChild(metaDiv);
+
+	// ---- 4. 正文 ----
+	if (contentElement) {
+		snapshot.body.appendChild(contentElement);
+	}
+
+	return snapshot;
+}
+
+// ============================================================
+// 检测页面类型
+// ============================================================
 function detectWeb(doc, url) {
-	// .Card > [role="list"]见于个人主页
+	// .Card > [role="list"] 见于个人主页
 	const list = doc.querySelector('#SearchMain [role="list"],.Card > [role="list"]');
 	if (list) {
 		Z.monitorDOMChanges(list, { childList: true });
@@ -59,12 +411,17 @@ function detectWeb(doc, url) {
 	return false;
 }
 
+// ============================================================
+// 获取搜索结果列表
+// ============================================================
 function getSearchResults(doc, checkOnly) {
 	const items = {};
 	let found = false;
 	const rows = doc.querySelectorAll('.ArticleItem,.AnswerItem');
 	for (const row of rows) {
-		const titleElm = row.querySelector('.AnswerItem,.ArticleItem a');
+		// 修正：原来的 '.AnswerItem,.ArticleItem a' 会选中 AnswerItem 容器本身（不是链接），
+		// 导致 row.querySelector 返回无 href 的元素。改为统一选中行内的标题链接。
+		const titleElm = row.querySelector('a[href*="/answer/"], a[href*="/p/"]');
 		const data = row.getAttribute('data-zop');
 		let href, title;
 		if (titleElm) {
@@ -72,9 +429,13 @@ function getSearchResults(doc, checkOnly) {
 			title = ZU.trimInternal(titleElm.textContent);
 		}
 		else if (data) {
-			const dataObj = JSON.parse(data);
-			href = attr(row, '.ContentItem-meta~[itemprop="url"]', 'content');
-			title = dataObj.title + ` - ${dataObj.authorName}的回答`;
+			try {
+				const dataObj = JSON.parse(data);
+				href = attr(row, '.ContentItem-meta~[itemprop="url"]', 'content');
+				title = dataObj.title + ` - ${dataObj.authorName}的回答`;
+			} catch (e) {
+				continue;
+			}
 		}
 		if (!href || !title) continue;
 		if (checkOnly) return true;
@@ -84,6 +445,9 @@ function getSearchResults(doc, checkOnly) {
 	return found ? items : false;
 }
 
+// ============================================================
+// 主入口
+// ============================================================
 async function doWeb(doc, url) {
 	if (detectWeb(doc, url) == 'multiple') {
 		const items = await Zotero.selectItems(getSearchResults(doc, false));
@@ -98,118 +462,183 @@ async function doWeb(doc, url) {
 	}
 }
 
+// ============================================================
+// 抓取逻辑
+// ============================================================
 async function scrape(doc, url = doc.location.href) {
 	const newItem = new Zotero.Item(detectWeb(doc, url));
-	switch (newItem.itemType) {
+
+	// ---- 1. 抓取作者 ----
+	const authorName = getAttrBySelectors(doc, [
+		'.AuthorInfo > meta[itemprop="name"]',
+		'[itemprop="author"] [itemprop="name"]',
+	], 'content') || getTextBySelectors(doc, [
+		'.AuthorInfo-content .UserLink-link',
+		'.AuthorInfo-name',
+		'.AuthorInfo-name .UserLink-link',
+	]);
+
+	// ---- 2. 抓取日期 ----
+	const dateText = getTextBySelectors(doc, [
+		'.ContentItem-time a[data-tooltip]',
+		'.ContentItem-time',
+		'time[datetime]',
+		'[itemprop="datePublished"]',
+	]);
+	const dateISO = ZU.strToISO(dateText);
+
+	// ---- 3. 抓取正文容器（按页面类型分派）----
+	const itemType = newItem.itemType;
+	let contentSelectors = [];
+	if (itemType === 'forumPost') {
+		// 关键：优先从“回答卡片”内部查找正文，避免误抓问题描述
+		contentSelectors = [
+			'.AnswerCard .RichContent-inner',
+			'.List-item .RichContent-inner',
+			'[data-za-detail-view-path-module="AnswerItem"] .RichContent-inner',
+			'[itemprop="acceptedAnswer"] .RichContent-inner',
+			// 兜底：可能命中问题描述，放最后
+			'.RichContent-inner',
+			'[class*="RichContent-inner"]',
+			'[class*="RichText"]',
+		];
+	}
+	else if (itemType === 'blogPost') {
+		contentSelectors = [
+			'div.Post-RichText',
+			'div.RichText',
+			'[class*="RichText"]',
+		];
+	}
+
+	const contentEl = getContentElement(doc, contentSelectors);
+
+	// 后置校验：如果抓到的正文其实在问题描述/问题头部容器内，丢弃它
+	let finalContentEl = contentEl;
+	if (finalContentEl) {
+		const badAncestor = finalContentEl.closest(
+			'.QuestionRichText, .QuestionRichText--expandable, .QuestionRichText--collapsed, .QuestionHeader'
+		);
+		if (badAncestor) {
+			finalContentEl = null;
+		}
+	}
+
+	// ---- 4. 一次性克隆并清理正文，笔记和快照共用同一份 ----
+	let cleanedContent = null;
+	let noteHTML = '';
+	if (finalContentEl) {
+		cleanedContent = extractContentElement(finalContentEl);
+		noteHTML = cleanedContent.innerHTML;
+	}
+
+	// ---- 5. 分派到具体类型处理字段 ----
+	switch (itemType) {
 		case 'forumPost': {
-			newItem.title = innerText(doc, '.QuestionHeader-title');
-			let noteContent = doc.querySelector('div.RichContent-inner').innerHTML;
-			// 图片
-			noteContent = noteContent.replace(/<figure.*?<img src="(.*?)".*?<\/figure>/g, '<img src="$1"/>');
-			// 公式
-			noteContent = noteContent.replace(/<span class="ztext-math".*?data-tex="(.*?)".*?<\/span><\/span><\/span>/g, '$$$1$');
-			// 小卡片链接
-			noteContent = noteContent.replace(/<a target="_blank" href="(.*?)".*?data-text="(.*?)".*?<\/a>/gi, '<a href="$1">$2</a>');
-			// 去掉知乎直达的链接
-			noteContent = noteContent.replace(/<span><a class="RichContent-EntityWord.*?blank">(.*?)<svg.*?<\/span>/g, '$1');
-			// 去掉知乎跳转
-			noteContent = noteContent.replace(/(https:\/\/link.zhihu.com\/\?target=.*?)([">|<])/g, (match, href, quoteOrDelimiter) => {
-				try {
-					// 提取 target 参数的值
-					const url = new URL(href);
-					const target = url.searchParams.get("target");
-					if (target) {
-						// 解码 target 参数的值
-						const decodedTarget = decodeURIComponent(target);
-						// 返回解码后的 URL 和原来的分隔符
-						return decodedTarget + quoteOrDelimiter;
-					}
-					else {
-						// 如果没有 target 参数，返回原始匹配
-						return match;
-					}
-				}
-				catch (e) {
-					// 如果 href 不是有效的 URL，返回原始匹配
-					return match;
-				}
-			});
-			// 清理CSS类名和样式
-			// 移除class属性
-			noteContent = noteContent.replace(/class="[^"]*"/g, '');
-			// 移除style属性
-			noteContent = noteContent.replace(/style="[^"]*"/g, '');
-			// 移除<style>标签块
-			noteContent = noteContent.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
-			// 移除CSS选择器和规则
-			noteContent = noteContent.replace(/\.[a-zA-Z0-9_-]+{[^}]*}/g, '');
-			newItem.abstractNote = ZU.cleanTags(noteContent).slice(0, 150) + '...';
+			newItem.title = getTextBySelectors(doc, [
+				'h1.QuestionHeader-title',
+				'.QuestionHeader-title',
+				'[class*="QuestionHeader"] h1',
+			]) || attr(doc, 'meta[property="og:title"]', 'content');
+
 			newItem.forumTitle = '知乎';
 			newItem.postType = '知乎回答';
-			newItem.date = ZU.strToISO(innerText(doc, '.ContentItem-time a[data-tooltip]'));
-			newItem.notes.push({ note: noteContent });
-			const vote = attr(doc, 'meta[itemprop="upvoteCount"]', 'content');
+			newItem.date = dateISO;
+
+			if (noteHTML) {
+				newItem.notes.push({ note: noteHTML });
+				newItem.abstractNote = ZU.cleanTags(noteHTML).slice(0, 150) + '...';
+			}
+
+			// 赞同数：兼容 meta 和按钮两种形式
+			let vote = attr(doc, 'meta[itemprop="upvoteCount"]', 'content');
+			if (!vote) {
+				const voteBtn = doc.querySelector('button[aria-label*="赞同"], button[aria-label*="upvote"]');
+				if (voteBtn) {
+					vote = parseVoteCount(voteBtn.getAttribute('aria-label'));
+				}
+			}
 			if (vote) newItem.extra = `vote: ${vote}`;
 			break;
 		}
+
 		case 'blogPost': {
-			newItem.title = attr(doc, 'meta[property="og:title"]', 'content');
-			let noteContent = doc.querySelector('div.RichText').innerHTML;
-			// 图片
-			noteContent = noteContent.replace(/<figure.*?<img src="(.*?)".*?<\/figure>/g, '<img src="$1"/>');
-			// 公式
-			noteContent = noteContent.replace(/<span class="ztext-math".*?data-tex="(.*?)".*?<\/span><\/span><\/span>/g, '$$$1$');
-			// 小卡片链接
-			noteContent = noteContent.replace(/<a target="_blank" href="(.*?)".*?data-text="(.*?)".*?<\/a>/gi, '<a href="$1">$2</a>');
-			// 去掉知乎直达的链接
-			noteContent = noteContent.replace(/<span><a class="RichContent-EntityWord.*?blank">(.*?)<svg.*?<\/span>/g, '$1');
-			// 去掉知乎跳转
-			noteContent = noteContent.replace(/(https:\/\/link.zhihu.com\/\?target=.*?)([">|<])/g, (match, href, quoteOrDelimiter) => {
-				try {
-					// 提取 target 参数的值
-					const url = new URL(href);
-					const target = url.searchParams.get("target");
-					if (target) {
-						// 解码 target 参数的值
-						const decodedTarget = decodeURIComponent(target);
-						// 返回解码后的 URL 和原来的分隔符
-						return decodedTarget + quoteOrDelimiter;
-					}
-					else {
-						// 如果没有 target 参数，返回原始匹配
-						return match;
-					}
-				}
-				catch (e) {
-					// 如果 href 不是有效的 URL，返回原始匹配
-					return match;
-				}
-			});
-			newItem.abstractNote = ZU.cleanTags(noteContent).slice(0, 150) + '...';
-			newItem.blogTitle = innerText(doc, '.ContentItem-title') || attr(doc, 'meta[prperty="og:site_name"]', 'content');
-			newItem.websiteType = "知乎专栏文章";
-			newItem.date = ZU.strToISO(innerText(doc, '.ContentItem-time'));
-			newItem.notes.push({ note: noteContent });
+			newItem.title = getAttrBySelectors(doc, [
+				'meta[property="og:title"]',
+			], 'content') || getTextBySelectors(doc, [
+				'h1.Post-Title',
+				'h1[class*="Title"]',
+			]);
+
+			// 修复原代码 prperty 拼写错误
+			newItem.blogTitle = getTextBySelectors(doc, [
+				'.ContentItem-title',
+				'.Post-Title',
+			]) || attr(doc, 'meta[property="og:site_name"]', 'content');
+
+			newItem.websiteType = '知乎专栏文章';
+			newItem.date = dateISO;
+
+			if (noteHTML) {
+				newItem.notes.push({ note: noteHTML });
+				newItem.abstractNote = ZU.cleanTags(noteHTML).slice(0, 150) + '...';
+			}
+
+			// 赞同数：兼容按钮和 meta
+			let vote = null;
 			const voteUpText = attr(doc, 'button[aria-live="polite"]', 'aria-label');
-			const vote = parseVoteCount(voteUpText);
+			if (voteUpText) {
+				vote = parseVoteCount(voteUpText);
+			}
+			if (!vote) {
+				vote = attr(doc, 'meta[itemprop="upvoteCount"]', 'content');
+			}
 			if (vote) newItem.extra = `vote: ${vote}`;
-			// optimal DOM for zhuanlan post
-			// optimalDOM(doc);
 			break;
 		}
 	}
+
 	newItem.url = url;
 	newItem.language = 'zh-CN';
-	newItem.creators.push({
-		lastName: attr(doc, '.AuthorInfo > meta[itemprop="name"]', 'content'),
-		creatorType: 'author',
-		fieldMode: 1
+
+	if (authorName) {
+		newItem.creators.push({
+			lastName: authorName,
+			creatorType: 'author',
+			fieldMode: 1
+		});
+	}
+
+	// ---- 6. 构建最小化快照文档 ----
+	// 关键：不再 clone 整页，而是用空白文档 + 已清理的正文子树拼装
+	const snapshotDoc = buildSnapshotDocument(doc, cleanedContent, {
+		title: newItem.title,
+		author: authorName,
+		date: dateISO,
+		url: url,
+		siteName: newItem.blogTitle || newItem.forumTitle || '知乎',
 	});
-	newItem.attachments.push({ url: url, title: 'Snapshot', document: doc });
-	attr(doc, 'meta[itemprop="keywords"]', 'content').split(",").forEach(t => newItem.tags.push({ tag: t }));
+	newItem.attachments.push({
+		url: url,
+		title: 'Snapshot',
+		document: snapshotDoc,
+	});
+
+	// ---- 7. 标签 ----
+	const keywords = attr(doc, 'meta[itemprop="keywords"]', 'content');
+	if (keywords) {
+		keywords.split(',').forEach(t => {
+			const trimmed = t.trim();
+			if (trimmed) newItem.tags.push({ tag: trimmed });
+		});
+	}
+
 	newItem.complete();
 }
 
+// ============================================================
+// 解析赞同数（支持“万”单位）
+// ============================================================
 function parseVoteCount(text) {
 	if (!text) return null;
 	const match = text.match(/([0-9]+(?:\.[0-9]+)?)\s*(万)?/);
@@ -218,96 +647,6 @@ function parseVoteCount(text) {
 	const unit = match[2];
 	if (unit === '万') return Math.round(num * 10000).toString();
 	return Math.round(num).toString();
-}
-
-//Loop to delete the node
-function _delElem(elems) {
-	while (elems[0] != undefined) {
-		let parent = elems[0].parentElement;
-		parent.removeChild(elems[0]);
-	}
-}
-
-// Define delete function
-function delElemByClassName(doc, className) {
-	let elems = doc.getElementsByClassName(className);
-	_delElem(elems);
-}
-
-function loadLazy(doc) {
-	// Page scrolling speed (the time required to scroll through one screen height, the shorter the time, the faster).
-	// If there is slow internet speed, fast scrolling, and lazy loading images cannot be fully displayed, increase this number to try.
-	let scrollInterval = 100;
-	let scrollHeight = doc.documentElement.scrollHeight;
-	let clientHeight = doc.documentElement.clientHeight;
-	let lastHeight = 0;
-	let task = setInterval(function () {
-		if (lastHeight < scrollHeight) {
-			window.scrollTo(lastHeight, lastHeight + clientHeight);
-			lastHeight += clientHeight;
-		}
-		else {
-			clearInterval(task);
-			// After loading the image, delete the <noscript> tag.
-			let elems = doc.getElementsByTagName("noscript");
-			_delElem(elems);
-		}
-	}, scrollInterval);
-}
-
-function beautifyHtml(doc) {
-	const cssCode = `
-		/* Insert your CSS code here */
-		.Post-RichTextContainer {
-			width: 690px !important;
-			margin: 0 auto !important;
-		}
-
-		.ContentItem-time {
-			width: 690px !important;
-			margin: 0 auto !important;
-		}
-
-		.Post-Main, .Post-Sub {
-			width: 690px !important;
-			margin: 0 auto !important;
-		}
-	`;
-
-	var styleElement = doc.createElement('style');
-	styleElement.innerHTML = cssCode;
-
-	doc.head.insertAdjacentElement('beforeend', styleElement);
-}
-
-
-function optimalDOM(doc) {
-	// Remove the top status bar.
-	delElemByClassName(doc, "ColumnPageHeader-Wrapper");
-	// Delete top image
-	delElemByClassName(doc, "css-78p1r9");
-	// Delete follow button
-	delElemByClassName(doc, "FollowButton");
-	// Delete the left directory.
-	delElemByClassName(doc, "Catalog");
-	// Remove bottom share.
-	delElemByClassName(doc, "Sticky");
-	// Delete return to top.
-	delElemByClassName(doc, "CornerButtons");
-	// Delete recommended reading
-	delElemByClassName(doc, "Recommendations-Main");
-	// Delete column
-	delElemByClassName(doc, "PostIndex-Contributions");
-	// Remove appreciation
-	delElemByClassName(doc, "Reward");
-	// Delete topic
-	delElemByClassName(doc, "Post-topicsAndReviewer");
-	// beautify html
-	beautifyHtml(doc);
-	// Delete comment.
-	// delElemByClassName(doc, "Post-Sub Post-NormalSub")
-	// Scroll the page, load images
-	loadLazy(doc);
 }
 
 /** BEGIN TEST CASES **/
