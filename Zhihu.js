@@ -9,7 +9,7 @@
 	"inRepository": true,
 	"translatorType": 4,
 	"browserSupport": "gcsibv",
-	"lastUpdated": "2026-10-12 12:16:05"
+	"lastUpdated": "2026-10-14 05:54:45"
 }
 
 /*
@@ -532,6 +532,11 @@ async function scrape(doc, url = doc.location.href) {
 		noteHTML = cleanedContent.innerHTML;
 	}
 
+	// ---- 4.5 估算朗读时间 ----
+	// 基于已清理的笔记 HTML 提取纯文本再统计
+	const plainText = noteHTML ? ZU.cleanTags(noteHTML) : '';
+	const readingTime = estimateReadingTime(plainText);
+
 	// ---- 5. 分派到具体类型处理字段 ----
 	switch (itemType) {
 		case 'forumPost': {
@@ -550,15 +555,6 @@ async function scrape(doc, url = doc.location.href) {
 				newItem.abstractNote = ZU.cleanTags(noteHTML).slice(0, 150) + '...';
 			}
 
-			// 赞同数：兼容 meta 和按钮两种形式
-			let vote = attr(doc, 'meta[itemprop="upvoteCount"]', 'content');
-			if (!vote) {
-				const voteBtn = doc.querySelector('button[aria-label*="赞同"], button[aria-label*="upvote"]');
-				if (voteBtn) {
-					vote = parseVoteCount(voteBtn.getAttribute('aria-label'));
-				}
-			}
-			if (vote) newItem.extra = `vote: ${vote}`;
 			break;
 		}
 
@@ -584,19 +580,28 @@ async function scrape(doc, url = doc.location.href) {
 				newItem.abstractNote = ZU.cleanTags(noteHTML).slice(0, 150) + '...';
 			}
 
-			// 赞同数：兼容按钮和 meta
-			let vote = null;
-			const voteUpText = attr(doc, 'button[aria-live="polite"]', 'aria-label');
-			if (voteUpText) {
-				vote = parseVoteCount(voteUpText);
-			}
-			if (!vote) {
-				vote = attr(doc, 'meta[itemprop="upvoteCount"]', 'content');
-			}
-			if (vote) newItem.extra = `vote: ${vote}`;
 			break;
 		}
 	}
+
+	// ---- 5.5 汇总 extra 字段（Zotero 约定：每行一个字段）----
+	const extraParts = [];
+	// 赞同数：从 case 分支里挪出来，统一处理
+	if (newItem.itemType === 'forumPost') {
+		let vote = attr(doc, 'meta[itemprop="upvoteCount"]', 'content');
+		if (!vote) {
+			const voteBtn = doc.querySelector('button[aria-label*="赞同"], button[aria-label*="upvote"]');
+			if (voteBtn) vote = parseVoteCount(voteBtn.getAttribute('aria-label'));
+		}
+		if (vote) extraParts.push(`vote: ${vote}`);
+	}
+	else if (newItem.itemType === 'blogPost') {
+		let vote = parseVoteCount(attr(doc, 'button[aria-live="polite"]', 'aria-label'));
+		if (!vote) vote = attr(doc, 'meta[itemprop="upvoteCount"]', 'content');
+		if (vote) extraParts.push(`vote: ${vote}`);
+	}
+	if (readingTime) extraParts.push(`readingTime: ${readingTime}`);
+	if (extraParts.length) newItem.extra = extraParts.join('\n');
 
 	newItem.url = url;
 	newItem.language = 'zh-CN';
@@ -634,6 +639,44 @@ async function scrape(doc, url = doc.location.href) {
 	}
 
 	newItem.complete();
+}
+
+// ============================================================
+// 工具函数：估算朗读时间
+// ============================================================
+/**
+ * 根据文本内容估算朗读所需时间。
+ * 中文按 200 字/分钟，英文按 130 词/分钟，分别统计后相加。
+ * 不足 1 分钟时返回“约 X 秒”；超过 1 分钟时向上取整为分钟。
+ *
+ * @param {string} text - 纯文本（已剥离 HTML 标签）
+ * @returns {string|null} 形如 "约 3 分钟" / "约 45 秒"，无内容时返回 null
+ */
+function estimateReadingTime(text) {
+	if (!text) return null;
+
+	// 去掉 URL（朗读时通常跳过）
+	const cleaned = text.replace(/https?:\/\/\S+/g, ' ');
+
+	// 统计中文字符（CJK 统一表意文字基本区）
+	const cjkMatches = cleaned.match(/[\u4e00-\u9fa5]/g);
+	const cjkCount = cjkMatches ? cjkMatches.length : 0;
+
+	// 统计英文单词：先剔除中文，再匹配连续字母
+	const withoutCJK = cleaned.replace(/[\u4e00-\u9fa5]/g, ' ');
+	const wordMatches = withoutCJK.match(/[a-zA-Z]+/g);
+	const wordCount = wordMatches ? wordMatches.length : 0;
+
+	if (cjkCount === 0 && wordCount === 0) return null;
+
+	// 分钟数
+	const minutes = cjkCount / 200 + wordCount / 130;
+
+	if (minutes < 1) {
+		const seconds = Math.max(1, Math.round(minutes * 60));
+		return `约 ${seconds} 秒`;
+	}
+	return `约 ${Math.ceil(minutes)} 分钟`;
 }
 
 // ============================================================
