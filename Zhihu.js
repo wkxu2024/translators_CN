@@ -9,7 +9,7 @@
 	"inRepository": true,
 	"translatorType": 4,
 	"browserSupport": "gcsibv",
-	"lastUpdated": "2026-10-14 05:54:45"
+	"lastUpdated": "2026-10-14 08:58:35"
 }
 
 /*
@@ -600,7 +600,7 @@ async function scrape(doc, url = doc.location.href) {
 		if (!vote) vote = attr(doc, 'meta[itemprop="upvoteCount"]', 'content');
 		if (vote) extraParts.push(`vote: ${vote}`);
 	}
-	if (readingTime) extraParts.push(`readingTime: ${readingTime}`);
+	if (readingTime) extraParts.push(`time: ${readingTime}`);
 	if (extraParts.length) newItem.extra = extraParts.join('\n');
 
 	newItem.url = url;
@@ -647,10 +647,14 @@ async function scrape(doc, url = doc.location.href) {
 /**
  * 根据文本内容估算朗读所需时间。
  * 中文按 200 字/分钟，英文按 130 词/分钟，分别统计后相加。
- * 不足 1 分钟时返回“约 X 秒”；超过 1 分钟时向上取整为分钟。
+ * 公式（$...$ / $$...$$）按其中英文内容正常计入。
+ *
+ * 返回值：整数分钟（字符串），不足 1 分钟记为 1。
+ *   例：'1'、'2'、'15'
+ *   无内容时返回 null。
  *
  * @param {string} text - 纯文本（已剥离 HTML 标签）
- * @returns {string|null} 形如 "约 3 分钟" / "约 45 秒"，无内容时返回 null
+ * @returns {string|null}
  */
 function estimateReadingTime(text) {
 	if (!text) return null;
@@ -672,11 +676,8 @@ function estimateReadingTime(text) {
 	// 分钟数
 	const minutes = cjkCount / 200 + wordCount / 130;
 
-	if (minutes < 1) {
-		const seconds = Math.max(1, Math.round(minutes * 60));
-		return `约 ${seconds} 秒`;
-	}
-	return `约 ${Math.ceil(minutes)} 分钟`;
+	// 整数分钟，最小 1
+	return Math.max(1, Math.round(minutes)).toString();
 }
 
 // ============================================================
